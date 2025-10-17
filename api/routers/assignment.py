@@ -5,6 +5,9 @@ from api.schemas.assignment import Assignment
 
 router = APIRouter()
 
-@router.get("/assignment", response_model=List[Assignment])
-async def get_assignment():
-    pass
+@router.get("/assignment")
+async def get_assignment(due_date: str):
+    """
+    受け取った締切と同じ課題を返す
+    """
+    return assignment.get_assignment_by_due(due_date)

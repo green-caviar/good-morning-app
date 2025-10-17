@@ -1,6 +1,5 @@
 import csv
-from typing import Tuple, List
-from collections import defaultdict
+from typing import List
 
 TIMETABLE_CSV_PATH = "data/timetable.csv"
 
