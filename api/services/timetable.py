@@ -1,18 +1,17 @@
 import csv
-from typing import List
-from api.schemas.timetable import Timetable
+from typing import Tuple, List
+from collections import defaultdict
 
 TIMETABLE_CSV_PATH = "data/timetable.csv"
 
-def get_timetable_all() -> List[Timetable]:
-    """
-    CSVファイルから全ての時間割データを読み込み、リストとして返す。
-    """
-    timetable_list = []
+def get_tametable_by_day(weekday: str) -> List[str]:
     with open(TIMETABLE_CSV_PATH, mode='r', encoding='utf-8') as f:
-        # CSVを辞書形式で読み込む
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Pydanticモデルに変換してリストに追加
-            timetable_list.append(Timetable(**row))
-    return timetable_list
+        reader = csv.reader(f)
+        timetable_data = list(reader)
+
+    timetable_day = []
+    for row in timetable_data:
+        if weekday == row[2]:
+            timetable_day.append(row[1])
+
+    return timetable_day
