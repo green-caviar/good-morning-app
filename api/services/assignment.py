@@ -12,3 +12,4 @@ def get_assignment_by_due(due_date: str) -> List[str]:
         if due_date == row[4]:
             assignment.append(row)
     return assignment
+#金野泰樹がこのプロジェクトに参加しました。ここの機能を追加します。
