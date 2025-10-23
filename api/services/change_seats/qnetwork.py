@@ -5,7 +5,6 @@ import torch.nn.functional as F
 class QNetwork(nn.Module):
 
     def __init__(self, state_size, action_size):
-        """ネットワークの層（部品）をここで定義する"""
 
         super(QNetwork, self).__init__()
 
@@ -15,7 +14,7 @@ class QNetwork(nn.Module):
         self.layer3 = nn.Linear(64, action_size)
 
     def forward(self, state):
-        """データがネットワークを流れる「順序」をここで定義する"""
+        """データがネットワークを流れる順序を定義"""
 
         x = F.relu(self.layer1(state))
         x = F.relu(self.layer2(x))
