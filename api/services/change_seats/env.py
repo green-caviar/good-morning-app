@@ -4,9 +4,8 @@ import pandas as pd  # 1. pandas をインポート
 class Env:
 
     def __init__(self):
-        """
-        'relationships.csv' を読み込んで環境を初期化する
-        """
+        """'relationships.csv' を読み込んで環境を初期化する"""
+
         try:
             df = pd.read_csv('data/relationships.csv', header=0, index_col=0)
 
@@ -30,16 +29,16 @@ class Env:
             raise ValueError(f"関係性マトリクスの形状が({self.num_students}, {self.num_students})ではありません。Shape: {self.relations.shape}")
 
     def reset(self):
+        """席配列を初期化する"""
 
-        # 席配列を初期化する
         initial_state_1d = np.random.permutation(self.num_students)
         initial_state_2d = initial_state_1d.reshape((self.rows, self.cols))
 
         return initial_state_2d
 
     def calculate_score(self, state):
+        """席配置のスコアを計算する"""
 
-        # 席配置のスコアを計算する
         total_score = 0
 
         directions = [
@@ -65,7 +64,8 @@ class Env:
         return total_score / 2
 
     def step(self, state, action_pair):
-        # 席を変え、新しい配置と報酬を返す
+        """席を変え、新しい配置と報酬を返す"""
+
         student_id_1, student_id_2 = action_pair
         try:
             coords1 = np.where(state == student_id_1)
