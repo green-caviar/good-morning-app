@@ -3,8 +3,8 @@ import numpy as np
 import itertools
 from collections import deque
 
-from env import Env
-from agent import Agent
+from api.services.change_seats.env import Env
+from api.services.change_seats.agent import Agent
 
 
 # 学習の基本設定
