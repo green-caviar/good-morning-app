@@ -6,6 +6,7 @@ from api.schemas.change_seats import Change_seats
 import traceback
 import numpy as np
 import itertools
+import time
 
 router = APIRouter()
 
@@ -253,5 +254,118 @@ async def env_agent_step_test():
             "details": str(e),
             "traceback": traceback.format_exc(),
             "hint": "Envが返す形状(6,5)とAgentが期待する形状(30,)の .flatten() 変換が正しいか確認してください。"
+        }
+
+# エンドポイントの実行がタイムアウトしないよう、
+# テスト用の小さな値を設定します。
+TEST_EPISODES = 10       # 10回のシミュレーションのみ実行
+TEST_MAX_STEPS = 20      # 1シミュレーションあたり20回のみ席交換
+TEST_BATCH_SIZE = 8      # 学習時のバッチサイズも小さめに
+TEST_MEMORY_CAPACITY = 1000 # メモリも小さめ
+
+@router.get("/train")
+async def train_test():
+    """
+    train.py の学習ループ全体の動作確認用エンドポイント。
+    
+    1. Env と Agent を初期化する。
+    2.「テスト用の少ない回数」(10エピソード x 20ステップ) で
+       学習ループ (act -> step -> add_experience -> learn) を実行する。
+    3. ループがエラーなく完了し、スコアが記録されるか確認する。
+    """
+    start_time = time.time()
+    try:
+        # --- 1. train.py の初期化ロジック ---
+        env = Env()
+        
+        NUM_STUDENTS = 30
+        ACTION_SIZE = len(list(itertools.combinations(range(NUM_STUDENTS), 2))) # 435
+
+        agent = Agent(state_size=NUM_STUDENTS,
+                      action_size=ACTION_SIZE,
+                      memory_capacity=TEST_MEMORY_CAPACITY, # Test
+                      learning_rate=1e-3,
+                      gamma=0.99)
+        
+        # 温度設定 (train.py と同じものを使用)
+        TEMP_START = 2.0
+        TEMP_END = 1.0
+        TEMP_DECAY = 0.995
+        temperature = TEMP_START
+        
+        all_scores = [] # スコア履歴
+
+        # --- 2. train.py のメインループ (テスト回数版) ---
+        for episode in range(1, TEST_EPISODES + 1):
+            
+            state_array = env.reset() # (6, 5) 2D
+            
+            for step in range(TEST_MAX_STEPS): # 20ステップ
+                
+                # 1. 行動 (Env(2D) -> Agent(1D))
+                state_1d = state_array.flatten()
+                action_index = agent.act(state_1d, temperature)
+                action_pair = agent.action_pairs[action_index]
+                
+                # 2. 実行 (Env)
+                next_state_array, reward, done = env.step(state_array, action_pair)
+                
+                # 3. 記憶 (Agent(1D))
+                next_state_1d = next_state_array.flatten()
+                agent.add_experience(state_1d, action_index, reward, next_state_1d, done)
+                
+                # 4. 学習 (Agent)
+                agent.learn(TEST_BATCH_SIZE) # Test
+                
+                state_array = next_state_array
+                
+                if done:
+                    break
+            
+            # エピソード終了
+            final_score = env.calculate_score(state_array)
+            all_scores.append(final_score)
+            
+            # 温度更新
+            temperature = max(TEMP_END, TEMP_DECAY * temperature)
+
+        # --- 3. ループ完了。結果を返す ---
+        end_time = time.time()
+        
+        return {
+            "status": "success",
+            "message": "Training loop test completed successfully.",
+            "config": {
+                "episodes_run": TEST_EPISODES,
+                "steps_per_episode": TEST_MAX_STEPS
+            },
+            "timing_seconds": (end_time - start_time),
+            "results": {
+                "final_scores_history": all_scores,
+                "average_score": np.mean(all_scores),
+                "final_temperature": temperature
+            },
+            "memory_status": {
+                "length": len(agent.memory), # (10 * 20) = 200 になるはず
+                "capacity": TEST_MEMORY_CAPACITY
+            }
+        }
+
+    except ImportError as e:
+        return {
+            "status": "error",
+            "message": "ImportError: Env または Agent の import に失敗しました。",
+            "details": str(e),
+            "traceback": traceback.format_exc(),
+        }
+    except Exception as e:
+        # ループの途中でエラーが起きた場合 (例: learnメソッドのエラー)
+        return {
+            "status": "error",
+            "message": "学習ループの実行中に予期せぬエラーが発生しました。",
+            "error_type": type(e).__name__,
+            "details": str(e),
+            "traceback": traceback.format_exc(),
+            "hint": "agent.learn() や agent.add_experience() の内部ロジックを確認してください。"
         }
 # --- ここまで追加 ---
