@@ -12,29 +12,25 @@ class Agent:
 
     def __init__(self, seating_size, relations_size, action_size, memory_capacity, learning_rate=1e-3, gamma=0.99):
         """
-        解説:
-        引数を大幅に変更しました。
-        - state_size (30) -> seating_size (30) に名前変更
-        - relations_size (900) を新たに追加
+        930入力 (seating_size=30, relations_size=900) を
+        受け取るコンストラクタ
         """
-
-        self.seating_size = seating_size   # 30 (座席表のサイズ)
-        self.relations_size = relations_size # 900 (関係性マトリクスのサイズ)
         
-        # 1. 脳(QNetwork)への総入力サイズを計算
-        self.actual_input_size = self.seating_size + self.relations_size # 30 + 900 = 930
+        self.seating_size = seating_size   # 30
+        self.relations_size = relations_size # 900
+        
+        # 1. 脳(QNetwork)への総入力サイズ
+        self.actual_input_size = self.seating_size + self.relations_size # 930
         
         self.action_size = action_size # 435
-
         self.gamma = gamma
 
-        # 2. action_pairs の生成 (生徒ID 0-29 が必要)
-        # seating_size (30) が生徒数(NUM_STUDENTS)と等しいため、これを使用します。
+        # 2. action_pairs の生成 (生徒ID 0-29)
         self.num_students = self.seating_size 
         self.action_pairs = list(itertools.combinations(range(self.num_students), 2))
 
         # 3. Agentの脳を作成
-        # QNetwork に渡す state_size を、計算した 930 に変更します。
+        # (qnetwork.py は 128, 128 の大きい脳のままでOK)
         self.model = QNetwork(state_size=self.actual_input_size, 
                               action_size=self.action_size)
 
@@ -43,7 +39,6 @@ class Agent:
 
         # リプレイメモリの設定
         self.memory = ReplayMemory(capacity=memory_capacity)
-
 
     def add_experience(self, state, action, reward, next_state, done):
         """エージェントのメモリに経験を追加する"""
@@ -68,9 +63,9 @@ class Agent:
         dones_tensor = torch.from_numpy(np.vstack(dones).astype(np.uint8)).float()
 
         # 正解の計算
-        Q_targets_next = self.model(next_states_tensor).max(1)[0].unsqueeze(1)
-        Q_targets = rewards_tensor + (self.gamma * Q_targets_next * (1 - dones_tensor))
-
+        with torch.no_grad():
+            Q_targets_next = self.model(next_states_tensor).max(1)[0].unsqueeze(1)
+            Q_targets = rewards_tensor + (self.gamma * Q_targets_next * (1 - dones_tensor))
         # 予測の計算
         Q_predicted = self.model(states_tensor).gather(1, actions_tensor)
 
@@ -98,7 +93,5 @@ class Agent:
 
         # 確率に基づいて行動インデックスを決定
         action_index = torch.multinomial(probs, num_samples=1).item()
-
-        self.model.train()
 
         return action_index

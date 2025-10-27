@@ -12,7 +12,8 @@ dependencies = [
     "uvicorn[standard] (>=0.37.0,<0.38.0)",
     "pandas",
     "numpy",
-    "torch"
+    "torch",
+    "python-multipart (>=0.0.20,<0.0.21)"
 ]
 
 
