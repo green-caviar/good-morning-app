@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, Depends, HTTPException
 from typing import List
 from api.services.change_seats.env import Env
 from api.services.change_seats.agent import Agent
@@ -7,6 +7,9 @@ import traceback
 import numpy as np
 import itertools
 import time
+import os
+import torch
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -369,3 +372,214 @@ async def train_test():
             "hint": "agent.learn() や agent.add_experience() の内部ロジックを確認してください。"
         }
 # --- ここまで追加 ---
+
+# AIの設定 (train.pyと一致させる)
+STATE_SIZE = 30
+ACTION_SIZE = len(list(itertools.combinations(range(STATE_SIZE), 2))) # 435
+MODEL_PATH = "data/qnetwork.pth" # 学習済みモデルのパス
+
+def initialize_agent():
+    """学習済みモデルをロードしたAgentインスタンスを作成する"""
+    
+    # 1. Agentの器を作成 (メモリは推論時には不要)
+    agent = Agent(
+        state_size=STATE_SIZE,
+        action_size=ACTION_SIZE,
+        memory_capacity=1 # 推論時はmemoryを使わない
+    )
+    
+    # 2. 学習済みの「脳（重み）」をロードする
+    if not os.path.exists(MODEL_PATH):
+        print(f"致命的エラー: モデルファイル '{MODEL_PATH}' が見つかりません。")
+        # FastAPIの起動を失敗させる
+        raise FileNotFoundError(f"モデルファイル '{MODEL_PATH}' がありません。train.py を実行してください。")
+
+    # GPUがない環境でもエラーなくロードするため 'cpu' を指定
+    agent.model.load_state_dict(
+        torch.load(MODEL_PATH, map_location=torch.device('cpu'))
+    )
+    
+    # 3. 必ず「予測モード (evaluation mode)」に切り替える (重要)
+    # これにより、勾配計算などがオフになり、高速・安全に予測できる
+    # (※ agent.act() 内部でも自動で切り替わりますが、明示的に行うのが安全です)
+    agent.model.eval() 
+    
+    print(f"'{MODEL_PATH}' から学習済みモデルをロードしました。[推論モード]")
+    return agent
+
+# FastAPI起動時に、EnvとAgentをそれぞれ1回だけ初期化
+try:
+    # Envも初期化しておき、スコア計算に使えるようにする
+    loaded_env = Env()
+    loaded_agent = initialize_agent()
+except FileNotFoundError as e:
+    print(f"起動時エラー: {e}")
+    # CSVやPTHがない場合は起動を停止させる
+    exit()
+
+# FastAPIのDI(Dependency Injection)を使い、
+# エンドポイント実行時にAgentインスタンスを「注入」する
+def get_agent():
+    """DI用の関数: ロード済みのAgentインスタンスを返す"""
+    return loaded_agent
+
+def get_env():
+    """DI用の関数: ロード済みのEnvインスタンスを返す"""
+    return loaded_env
+
+
+# (router = APIRouter() は定義済みと仮定)
+router = APIRouter()
+# (もし router がなければこの行のコメントを外す → router = APIRouter())
+
+
+# === 4. リクエスト/レスポンス用のPydanticモデル定義 ===
+
+class SeatLayout(BaseModel):
+    # [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], ...] のような6x5の配列を期待
+    layout: list[list[int]]
+    model_config = {
+        "example": {
+            "layout": [
+                [ 0,  1,  2,  3,  4],
+                [ 5,  6,  7,  8,  9],
+                [10, 11, 12, 13, 14],
+                [15, 16, 17, 18, 19],
+                [20, 21, 22, 23, 24],
+                [25, 26, 27, 28, 29]
+            ]
+        }
+    }
+
+
+class SwapSuggestion(BaseModel):
+    suggested_pair: list[int] # 例: [1, 5]
+    temperature_used: float
+    current_score: float # (おまけ: 現在のスコアも返す)
+    model_config = {
+        "example": {
+            "suggested_pair": [1, 5],
+            "temperature_used": 1.0,
+            "current_score": 31.6
+        }
+    }
+
+
+# === 5. 席替え推薦のエンドポイント (これがAPI本体) ===
+
+@router.post("/suggest_swap", response_model=SwapSuggestion)
+async def suggest_swap(
+    seat_layout: SeatLayout,
+    temperature: float = Query(1.0, ge=0.01, description="席替えのランダム性（温度）。0.1で堅実、1.0でバランス、3.0で大胆。"),
+    agent: Agent = Depends(get_agent),
+    env: Env = Depends(get_env)
+):
+    """
+    現在の座席表(6x5)を受け取り、学習済みAIが最適と判断した
+    「次の一手（交換ペア）」を提案します。
+    """
+    
+    # 1. リクエストボディ(2D List)をNumPy配列(2D)に変換
+    state_2d = np.array(seat_layout.layout)
+
+    # 2. 形状チェック (安全のため)
+    if state_2d.shape != (6, 5):
+        raise HTTPException(status_code=400, detail=f"座席表の形状が(6, 5)ではありません。Shape: {state_2d.shape}")
+
+    # 3. AIに渡すために1D (30,)にフラット化
+    state_1d = state_2d.flatten()
+
+    # 4. [Env] 現在のスコアを計算 (おまけ機能)
+    current_score = env.calculate_score(state_2d)
+
+    # 5. [Agent] AIに行動を決定させる (予測モード)
+    #    agent.act() は内部で model.eval() と torch.no_grad() を行う
+    action_index = agent.act(state_1d, temperature=temperature)
+    
+    # 6. index を IDペアに「翻訳」
+    action_pair = agent.action_pairs[action_index]
+    
+    # 7. 結果をJSONで返す
+    return SwapSuggestion(
+        suggested_pair=list(action_pair), # (1, 5) -> [1, 5]
+        temperature_used=temperature,
+        current_score=current_score
+    )
+
+# (もし api/main.py に直接書いているなら、app に router を含める)
+# from fastapi import FastAPI
+# app = FastAPI()
+# app.include_router(router, prefix="/api/v1") # 例
+
+# === 4. レスポンス用のPydanticモデル定義 (★新規追加) ===
+
+class OptimizedLayoutResponse(BaseModel):
+    final_layout: list[list[int]] # 最終的な座席表 (6x5)
+    initial_score: float        # 初期スコア
+    final_score: float          # 最終スコア
+    steps_taken: int            # AIが実行した交換回数
+    temperature_used: float
+    model_config = {
+        "example": {
+            "final_layout": [
+                [ 10, 2, 5, 29, 14],
+                [ 21, 13, 7, 8, 9],
+                # ... (以下略) ...
+                [ 25, 1, 27, 28, 4]
+            ],
+            "initial_score": 12.0,
+            "final_score": 58.0,
+            "steps_taken": 100,
+            "temperature_used": 0.1
+        }
+    }
+
+
+# === 5. AIおまかせ席替えエンドポイント (★これが新しいAPI) ===
+
+@router.get("/get_optimized_layout", response_model=OptimizedLayoutResponse)
+async def get_optimized_layout(
+    steps: int = Query(100, ge=1, le=500, description="AIが最適化のために試行する交換回数（ステップ数）"),
+    temperature: float = Query(0.1, ge=0.01, description="AIの行動の堅実さ（温度）。0.1が最も堅実（活用）。"),
+    agent: Agent = Depends(get_agent),
+    env: Env = Depends(get_env)
+):
+    """
+    AIによる席替えの最適化を実行し、
+    「最終的な座席表」を返します。
+    
+    (入力は不要です)
+    """
+    
+    # 1. ランダムな初期座席表を生成 (2D)
+    state_2d = env.reset()
+    initial_score = env.calculate_score(state_2d)
+
+    # 2. AIによる最適化ループを実行
+    for _ in range(steps):
+        
+        # 3. AIに渡すために1Dに変換
+        state_1d = state_2d.flatten()
+        
+        # 4. AIに行動を決定させる (予測モード)
+        #    指定された低温(堅実モード)で実行
+        action_index = agent.act(state_1d, temperature=temperature)
+        action_pair = agent.action_pairs[action_index]
+        
+        # 5. 環境を1ステップ進める (env.step は 2D配列を要求)
+        next_state_2d, reward, done = env.step(state_2d, action_pair)
+        
+        # 6. 座席表を更新
+        state_2d = next_state_2d
+
+    # 7. ループ完了後、最終スコアを計算
+    final_score = env.calculate_score(state_2d)
+    
+    # 8. 最終結果をJSONで返す
+    return OptimizedLayoutResponse(
+        final_layout=state_2d.tolist(), # NumPy配列(2D)をリスト(2D)に変換
+        initial_score=initial_score,
+        final_score=final_score,
+        steps_taken=steps,
+        temperature_used=temperature
+    )
