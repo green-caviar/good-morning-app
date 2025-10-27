@@ -7,6 +7,7 @@ import traceback
 import numpy as np
 import itertools
 import time
+from pydantic import BaseModel, conlist
 
 router = APIRouter()
 
@@ -369,3 +370,72 @@ async def train_test():
             "hint": "agent.learn() や agent.add_experience() の内部ロジックを確認してください。"
         }
 # --- ここまで追加 ---
+
+try:
+    from api.services.change_seats.agent import Agent
+except ImportError:
+    print("="*50)
+    print("エラー: agent.py が見つかりません。")
+    print("test_fastapi.py と同じ階層（または適切なパス）に配置してください。")
+    print("="*50)
+    exit()
+
+
+# --- 定数 ---
+SEATING_SIZE = 30  # 30席
+RELATIONS_SIZE = 900 # 30x30 マトリクス
+INPUT_SIZE = SEATING_SIZE + RELATIONS_SIZE # 930
+
+# 30人から2人を選ぶ組み合わせ = 435通り
+ACTION_SIZE = len(list(itertools.combinations(range(SEATING_SIZE), 2))) 
+
+# --- グローバル変数としてAgentを初期化 ---
+print("FastAPIサーバー起動中...")
+print(f"Agentを {INPUT_SIZE} 入力で初期化します...")
+
+agent = Agent(
+    seating_size=SEATING_SIZE,
+    relations_size=RELATIONS_SIZE,
+    action_size=ACTION_SIZE,
+    memory_capacity=1000 # テスト用なので小さくてOK
+)
+print("Agent初期化完了。")
+
+
+# --- 入力データの型定義 ---
+class StateInput(BaseModel):
+    # conlist は「要素数が固定されたリスト」を定義します
+    state: conlist(float, min_length=INPUT_SIZE, max_length=INPUT_SIZE)
+
+# --- エンドポイントの定義 ---
+
+@router.get("/")
+def read_root():
+    return {"message": "席替え最適化AI (DQN) 930入力テストサーバー"}
+
+@router.post("/act")
+def get_action(state_input: StateInput, temperature: float = 0.1):
+    """
+    930要素の状態ベクトルを受け取り、
+    AIが判断した「次の行動(action_index)」を返します。
+    """
+    
+    # 1. PydanticモデルからNumpy配列に変換
+    # (930,) のNumpy配列が完成
+    state_vector = np.array(state_input.state, dtype=np.float32)
+
+    # 2. 修正した agent.act を呼び出し
+    try:
+        action_index = agent.act(state_vector, temperature)
+        
+        # 3. action_index を人間がわかる「ペア」に翻訳
+        action_pair = agent.action_pairs[action_index]
+        
+        return {
+            "message": "Action calculated successfully.",
+            "input_state_shape": state_vector.shape,
+            "action_index": action_index,
+            "action_pair (student_id_1, student_id_2)": action_pair
+        }
+    except Exception as e:
+        return {"error": f"Agentの実行中にエラーが発生しました: {e}"}
