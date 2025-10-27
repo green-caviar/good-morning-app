@@ -2,9 +2,10 @@ services:
   good-morning-app:
     build: .
     volumes:
-      - .dockervenv:/src/.venv
+      #- .dockervenv:/src/.venv
       - .:/src
+      - /src/.venv
     ports:
       - 8000:8000
     environment:
-     - WATHCHFILES_FORCE_POLLING=true
+     - WATCHFILES_FORCE_POLLING=true
