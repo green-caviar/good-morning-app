@@ -15,44 +15,53 @@ import torch
 
 router = APIRouter()
 
-@router.get("/env")
-async def env_test():
+@router.get("/env-step2")
+async def env_step2_test():
     """
-    Envクラスの動作確認用エンドポイント。
+    ステップ2で修正した Env クラスの動作確認用エンドポイント。
 
-    1. Env() をインスタンス化し、relationships.csv を読み込む。
-    2. reset() を呼び出し、初期座席表を生成する。
-    3. calculate_score() で初期スコアを計算する。
+    1. 30x30 のダミーの関係性マトリクスを Numpy で作成する。
+    2. Env(relations_matrix=...) にダミーマトリクスを渡してインスタンス化する。
+    3. reset() を呼び出し、初期座席表を生成する。
+    4. calculate_score() で初期スコアを計算する。
 
-    これらが成功すれば、CSVの読み込みとEnvの基本ロジックが
-    正しく機能していることを確認できます。
+    これらが成功すれば、Envが外部マトリクスを正しく受け取れていることを
+    確認できます。
     """
     try:
-        # 1. Envのインスタンスを作成
-        #    (この瞬間に 'relationships.csv' が読み込まれます)
-        env = Env()
+        # --- 1. ダミーの関係性マトリクスを作成 ---
+        NUM_STUDENTS = 30
+        # 全員が「普通(0)」の関係性を持つダミーマトリクス
+        dummy_matrix = np.zeros((NUM_STUDENTS, NUM_STUDENTS), dtype=np.float32)
 
-        # 2. reset() をテスト
-        initial_state = env.reset()
+        # --- 2. 修正版 Env をインスタンス化 ---
+        # (この瞬間にダミーマトリクスが self.relations に格納される)
+        env = Env(relations_matrix=dummy_matrix)
 
-        # 3. calculate_score() をテスト
-        #    (内部で self.relations を参照します)
+        # --- 3. reset() をテスト ---
+        initial_state = env.reset() # (6, 5) の配列が返るはず
+
+        # --- 4. calculate_score() をテスト ---
+        # (内部でダミーマトリクス(全部0)が参照される)
         initial_score = env.calculate_score(initial_state)
 
-        # 4. 成功したことをSwaggerUIに返す
+        # 5. 成功したことをSwaggerUIに返す
         return {
             "status": "success",
-            "message": "Env initialized and tested successfully.",
-            "csv_shape": env.relations.shape,
-            "initial_state_shape": initial_state.shape,
-            "initial_score": initial_score,
-            # "initial_state_sample": initial_state.tolist()[0] # 最初の行だけサンプルで返す
+            "message": "Env (Step 2) initialized and tested successfully.",
+            "passed_matrix_shape": env.relations.shape,  # (タプルはJSONセーフ)
+            "initial_state_shape": initial_state.shape,  # (タプルはJSONセーフ)
+            
+            # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+            # 修正点: numpy.float32 を Python の float に変換
+            # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+            "initial_score": float(initial_score)
         }
-    except FileNotFoundError as e:
-        # env.py がCSVを見つけられなかった場合
+    except ValueError as e:
+        # Envの形状チェックでエラーが起きた場合
         return {
             "status": "error",
-            "message": "FileNotFoundError: 'relationships.csv' が見つかりません。",
+            "message": "Envの初期化中に形状エラーが発生しました。",
             "details": str(e),
             "traceback": traceback.format_exc()
         }
@@ -60,11 +69,13 @@ async def env_test():
         # その他の予期せぬエラー
         return {
             "status": "error",
-            "message": "Envのテスト中に予期せぬエラーが発生しました。",
+            "message": "Env (Step 2) のテスト中に予期せぬエラーが発生しました。",
             "error_type": type(e).__name__,
             "details": str(e),
             "traceback": traceback.format_exc()
         }
+
+# --- ここまで追加 ---
 
 @router.get("/agent")
 async def agent_test():
@@ -385,271 +396,280 @@ except ImportError:
     exit()
 
 
-# --- 定数 ---
-SEATING_SIZE = 30  # 30席
-RELATIONS_SIZE = 900 # 30x30 マトリクス
-INPUT_SIZE = SEATING_SIZE + RELATIONS_SIZE # 930
+# # --- 定数 ---
+# STATE_SIZE = 30  # 30席
+# RELATIONS_SIZE = 900 # 30x30 マトリクス
+# INPUT_SIZE = STATE_SIZE + RELATIONS_SIZE # 930
 
-# 30人から2人を選ぶ組み合わせ = 435通り
-ACTION_SIZE = len(list(itertools.combinations(range(SEATING_SIZE), 2))) 
+# # 30人から2人を選ぶ組み合わせ = 435通り
+# ACTION_SIZE = len(list(itertools.combinations(range(STATE_SIZE), 2))) 
 
-# --- グローバル変数としてAgentを初期化 ---
-print("FastAPIサーバー起動中...")
-print(f"Agentを {INPUT_SIZE} 入力で初期化します...")
+# # --- グローバル変数としてAgentを初期化 ---
+# print("FastAPIサーバー起動中...")
+# print(f"Agentを {INPUT_SIZE} 入力で初期化します...")
 
-agent = Agent(
-    seating_size=SEATING_SIZE,
-    relations_size=RELATIONS_SIZE,
-    action_size=ACTION_SIZE,
-    memory_capacity=1000 # テスト用なので小さくてOK
-)
-print("Agent初期化完了。")
+# agent = Agent(
+#     state_size=STATE_SIZE,
+#     relations_size=RELATIONS_SIZE,
+#     action_size=ACTION_SIZE,
+#     memory_capacity=1000 # テスト用なので小さくてOK
+# )
+# print("Agent初期化完了。")
 
 
-# --- 入力データの型定義 ---
-class StateInput(BaseModel):
-    # conlist は「要素数が固定されたリスト」を定義します
-    state: conlist(float, min_length=INPUT_SIZE, max_length=INPUT_SIZE)
+# # --- 入力データの型定義 ---
+# class StateInput(BaseModel):
+#     # conlist は「要素数が固定されたリスト」を定義します
+#     state: conlist(float, min_length=INPUT_SIZE, max_length=INPUT_SIZE)
 
-# --- エンドポイントの定義 ---
+# # --- エンドポイントの定義 ---
 
-@router.get("/")
-def read_root():
-    return {"message": "席替え最適化AI (DQN) 930入力テストサーバー"}
+# @router.get("/")
+# def read_root():
+#     return {"message": "席替え最適化AI (DQN) 930入力テストサーバー"}
 
-@router.post("/act")
-def get_action(state_input: StateInput, temperature: float = 0.1):
-    """
-    930要素の状態ベクトルを受け取り、
-    AIが判断した「次の行動(action_index)」を返します。
-    """
+# @router.post("/act")
+# def get_action(state_input: StateInput, temperature: float = 0.1):
+#     """
+#     930要素の状態ベクトルを受け取り、
+#     AIが判断した「次の行動(action_index)」を返します。
+#     """
     
-    # 1. PydanticモデルからNumpy配列に変換
-    # (930,) のNumpy配列が完成
-    state_vector = np.array(state_input.state, dtype=np.float32)
+#     # 1. PydanticモデルからNumpy配列に変換
+#     # (930,) のNumpy配列が完成
+#     state_vector = np.array(state_input.state, dtype=np.float32)
 
-    # 2. 修正した agent.act を呼び出し
-    try:
-        action_index = agent.act(state_vector, temperature)
+#     # 2. 修正した agent.act を呼び出し
+#     try:
+#         action_index = agent.act(state_vector, temperature)
         
-        # 3. action_index を人間がわかる「ペア」に翻訳
-        action_pair = agent.action_pairs[action_index]
+#         # 3. action_index を人間がわかる「ペア」に翻訳
+#         action_pair = agent.action_pairs[action_index]
         
-        return {
-            "message": "Action calculated successfully.",
-            "input_state_shape": state_vector.shape,
-            "action_index": action_index,
-            "action_pair (student_id_1, student_id_2)": action_pair
-        }
-    except Exception as e:
-        return {"error": f"Agentの実行中にエラーが発生しました: {e}"}
-# AIの設定 (train.pyと一致させる)
-STATE_SIZE = 30
-ACTION_SIZE = len(list(itertools.combinations(range(STATE_SIZE), 2))) # 435
-MODEL_PATH = "data/qnetwork.pth" # 学習済みモデルのパス
+#         return {
+#             "message": "Action calculated successfully.",
+#             "input_state_shape": state_vector.shape,
+#             "action_index": action_index,
+#             "action_pair (student_id_1, student_id_2)": action_pair
+#         }
+#     except Exception as e:
+#         return {"error": f"Agentの実行中にエラーが発生しました: {e}"}
+    
+# # あなたの router.py に追加するテストエンドポイント (修正版)
 
-def initialize_agent():
-    """学習済みモデルをロードしたAgentインスタンスを作成する"""
-    
-    # 1. Agentの器を作成 (メモリは推論時には不要)
-    agent = Agent(
-        state_size=STATE_SIZE,
-        action_size=ACTION_SIZE,
-        memory_capacity=1 # 推論時はmemoryを使わない
-    )
-    
-    # 2. 学習済みの「脳（重み）」をロードする
-    if not os.path.exists(MODEL_PATH):
-        print(f"致命的エラー: モデルファイル '{MODEL_PATH}' が見つかりません。")
-        # FastAPIの起動を失敗させる
-        raise FileNotFoundError(f"モデルファイル '{MODEL_PATH}' がありません。train.py を実行してください。")
+# from api.services.change_seats import config
+# from api.services.change_seats import matrix_utils
 
-    # GPUがない環境でもエラーなくロードするため 'cpu' を指定
-    agent.model.load_state_dict(
-        torch.load(MODEL_PATH, map_location=torch.device('cpu'))
-    )
-    
-    # 3. 必ず「予測モード (evaluation mode)」に切り替える (重要)
-    # これにより、勾配計算などがオフになり、高速・安全に予測できる
-    # (※ agent.act() 内部でも自動で切り替わりますが、明示的に行うのが安全です)
-    agent.model.eval() 
-    
-    print(f"'{MODEL_PATH}' から学習済みモデルをロードしました。[推論モード]")
-    return agent
+# # あなたの router.py の @router.get("/step3-matrix-utils") を置き換え
 
-# FastAPI起動時に、EnvとAgentをそれぞれ1回だけ初期化
+# # (config と matrix_utils のインポートは既にある前提)
+# # (import numpy as np, traceback も既にある前提)
+
+# @router.get("/step3-matrix-utils")
+# async def step3_matrix_utils_test():
+#     """
+#     ステップ3(CSV対応版)の動作確認。
+    
+#     1. matrix_utils.load_fixed_data_from_csv() で (29, 29) の固定データをロード
+#     2. ダミーの「ユーザー評価」(29要素) を作成
+#     3. matrix_utils.build_full_matrix() で (30, 30) のマトリクスを生成
+#     4. 生成されたマトリクスが、ルール通りか検証する
+#     """
+#     try:
+#         # --- 1. CSVから「固定データ」をロード ---
+#         # (ここで config.CSV_PATH が参照される)
+#         fixed_data = matrix_utils.load_fixed_data_from_csv()
+
+#         if fixed_data.shape != (config.NUM_STUDENTS - 1, config.NUM_STUDENTS - 1):
+#             raise ValueError(f"ロードした固定データの形状が(29, 29)ではありません: {fixed_data.shape}")
+
+#         # --- 2. ダミーの「ユーザー評価」を作成 ---
+#         # (ユーザー29番から、0〜28番への評価)
+#         user_evals = np.zeros(config.NUM_STUDENTS - 1, dtype=np.float32) # 29要素
+#         user_evals[0] = 1.0  # (29 -> 0 への評価)
+#         user_evals[1] = -1.0 # (29 -> 1 への評価)
+
+#         # --- 3. マトリクス生成関数を呼び出し ---
+#         full_matrix = matrix_utils.build_full_matrix(user_evals, fixed_data)
+
+#         # --- 4. 検証 ---
+#         USER_ID = config.USER_ID # 29
+        
+#         # (a) 形状は 30x30 か？
+#         if full_matrix.shape != (config.NUM_STUDENTS, config.NUM_STUDENTS):
+#             raise ValueError(f"マトリクスの形状が(30, 30)ではありません: {full_matrix.shape}")
+
+#         # (b) ユーザーの「行」は正しく反映されたか？
+#         test_val_1 = full_matrix[USER_ID, 0]
+#         test_val_2 = full_matrix[USER_ID, 1]
+#         if test_val_1 != 1.0 or test_val_2 != -1.0:
+#             raise ValueError(
+#                 f"ユーザー評価(行)が正しく反映されていません。"
+#                 f"TestVal1: {test_val_1}, TestVal2: {test_val_2}"
+#             )
+
+#         # (c) ユーザーの「列」は全部 0 (固定) か？
+#         user_col_sum = np.sum(full_matrix[:, USER_ID])
+#         if user_col_sum != 0.0:
+#             raise ValueError(f"ユーザー列(他者->自分)が 0 で固定されていません。")
+        
+#         # (d) 固定データは正しく反映されたか？ (0,0)地点を比較
+#         if full_matrix[0, 0] != fixed_data[0, 0]:
+#              raise ValueError("固定データ(0,0)が正しく反映されていません。")
+
+#         # --- 5. 成功 ---
+#         return {
+#             "status": "success",
+#             "message": "matrix_utils (CSV対応版) は正常に動作しています。",
+#             "loaded_fixed_data_shape": fixed_data.shape,
+#             "built_matrix_shape": full_matrix.shape,
+#             "validation_checks": {
+#                 "fixed_data_check": "OK",
+#                 "user_row_check": "OK",
+#                 "user_col_check (fixed_zero)": "OK"
+#             }
+#         }
+        
+#     except Exception as e:
+#         return {
+#             "status": "error",
+#             "message": "matrix_utils (CSV対応版) のテスト中にエラーが発生しました。",
+#             "error_type": type(e).__name__,
+#             "details": str(e),
+#             "traceback": traceback.format_exc()
+#         }
+
+# api/routers/change_seats.py
+
+from fastapi import APIRouter
+from typing import List, Optional
+from pydantic import BaseModel, conlist, Field # ★ Pydantic をインポート
+import numpy as np
+import traceback
+
+# --- 必要なモジュールをインポート ---
+from api.services.change_seats.env import Env
+from api.services.change_seats.agent import Agent
+from api.services.change_seats import config
+from api.services.change_seats import matrix_utils
+
+# ★ 1. 評価モジュールをインポート ★
 try:
-    # Envも初期化しておき、スコア計算に使えるようにする
-    loaded_env = Env()
-    loaded_agent = initialize_agent()
-except FileNotFoundError as e:
-    print(f"起動時エラー: {e}")
-    # CSVやPTHがない場合は起動を停止させる
-    exit()
+    from api.services.change_seats import evaluate
+except ImportError as e:
+    print(f"CRITICAL: evaluate.py のインポートに失敗しました: {e}")
+    evaluate = None
 
-# FastAPIのDI(Dependency Injection)を使い、
-# エンドポイント実行時にAgentインスタンスを「注入」する
-def get_agent():
-    """DI用の関数: ロード済みのAgentインスタンスを返す"""
-    return loaded_agent
+# ★ 2. 入力用のPydanticモデルを定義 ★
+class UserEvaluationInput(BaseModel):
+    # 29個の浮動小数点数のリストを要求
+    user_evals: conlist(float, min_length=29, max_length=29)
+    # (オプション) 初期座席表を指定できるようにする
+    initial_seating: Optional[List[List[int]]] = None
 
-def get_env():
-    """DI用の関数: ロード済みのEnvインスタンスを返す"""
-    return loaded_env
-
-
-# (router = APIRouter() は定義済みと仮定)
 router = APIRouter()
-# (もし router がなければこの行のコメントを外す → router = APIRouter())
+
+# ... ( /env, /agent, /step3-matrix-utils などのテストエンドポイント ... )
+# ... (これらは本番では不要なら削除してもOK) ...
 
 
-# === 4. リクエスト/レスポンス用のPydanticモデル定義 ===
+# ★ 3. 最終的なAPIエンドポイント ★
+# api/routers/change_seats.py
 
-class SeatLayout(BaseModel):
-    # [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], ...] のような6x5の配列を期待
-    layout: list[list[int]]
-    model_config = {
-        "example": {
-            "layout": [
-                [ 0,  1,  2,  3,  4],
-                [ 5,  6,  7,  8,  9],
-                [10, 11, 12, 13, 14],
-                [15, 16, 17, 18, 19],
-                [20, 21, 22, 23, 24],
-                [25, 26, 27, 28, 29]
-            ]
-        }
-    }
+from fastapi import APIRouter
+from typing import List, Optional, Dict # ★ Dict を追加
+from pydantic import BaseModel, conlist, validator # ★ validator を追加
+import numpy as np
+import traceback
+import pandas as pd
 
+# ... (Env, Agent, config, matrix_utils, evaluate のインポート) ...
 
-class SwapSuggestion(BaseModel):
-    suggested_pair: list[int] # 例: [1, 5]
-    temperature_used: float
-    current_score: float # (おまけ: 現在のスコアも返す)
-    model_config = {
-        "example": {
-            "suggested_pair": [1, 5],
-            "temperature_used": 1.0,
-            "current_score": 31.6
-        }
-    }
+# ★ 1. 入力モデルを辞書に変更 ★
+class UserEvaluationInput(BaseModel):
+    # キーが文字列、値が浮動小数点数の辞書を要求
+    user_evals: Dict[str, float]
 
-
-# === 5. 席替え推薦のエンドポイント (これがAPI本体) ===
-
-@router.post("/suggest_swap", response_model=SwapSuggestion)
-async def suggest_swap(
-    seat_layout: SeatLayout,
-    temperature: float = Query(1.0, ge=0.01, description="席替えのランダム性（温度）。0.1で堅実、1.0でバランス、3.0で大胆。"),
-    agent: Agent = Depends(get_agent),
-    env: Env = Depends(get_env)
-):
-    """
-    現在の座席表(6x5)を受け取り、学習済みAIが最適と判断した
-    「次の一手（交換ペア）」を提案します。
-    """
+    # バリデーターを追加して、要素数が29個かチェック
+    @validator('user_evals')
+    def check_dict_size(cls, v):
+        expected_size = config.NUM_STUDENTS - 1
+        if len(v) != expected_size:
+            raise ValueError(f'辞書の要素数は {expected_size} 個である必要があります')
+        return v
     
-    # 1. リクエストボディ(2D List)をNumPy配列(2D)に変換
-    state_2d = np.array(seat_layout.layout)
+    # initial_seating フィールドは削除
 
-    # 2. 形状チェック (安全のため)
-    if state_2d.shape != (6, 5):
-        raise HTTPException(status_code=400, detail=f"座席表の形状が(6, 5)ではありません。Shape: {state_2d.shape}")
+def create_example_evals() -> Dict[str, float]:
+    """名簿ファイルを読み込み、Swagger UI 用のサンプル評価辞書を作成する"""
+    example_dict = {}
+    try:
+        df_roster = pd.read_csv(config.ROSTER_PATH)
+        # ユーザー(ID=29)を除いた名前リストを取得
+        names = df_roster[df_roster['id'] != config.USER_ID]['name'].tolist()
+        if len(names) != config.NUM_STUDENTS - 1:
+            print(f"警告: 名簿の人数({len(names)})が期待値({config.NUM_STUDENTS - 1})と異なります。")
+        for name in names:
+            example_dict[name] = 0.0
+    except Exception as e:
+        print(f"警告: サンプルデータの生成に失敗しました: {e}")
+        # 失敗した場合の代替サンプル
+        example_dict = {f"生徒{i}": 0.0 for i in range(config.NUM_STUDENTS - 1)}
 
-    # 3. AIに渡すために1D (30,)にフラット化
-    state_1d = state_2d.flatten()
+    # 要素数が正しいか最終チェック
+    if len(example_dict) != config.NUM_STUDENTS - 1:
+         return {f"生徒{i}": 0.0 for i in range(config.NUM_STUDENTS - 1)}
+    return example_dict
 
-    # 4. [Env] 現在のスコアを計算 (おまけ機能)
-    current_score = env.calculate_score(state_2d)
-
-    # 5. [Agent] AIに行動を決定させる (予測モード)
-    #    agent.act() は内部で model.eval() と torch.no_grad() を行う
-    action_index = agent.act(state_1d, temperature=temperature)
-    
-    # 6. index を IDペアに「翻訳」
-    action_pair = agent.action_pairs[action_index]
-    
-    # 7. 結果をJSONで返す
-    return SwapSuggestion(
-        suggested_pair=list(action_pair), # (1, 5) -> [1, 5]
-        temperature_used=temperature,
-        current_score=current_score
+# ★ 2. 入力モデルの定義を修正 ★
+class UserEvaluationInput(BaseModel):
+    # Field を使って example を指定
+    user_evals: Dict[str, float] = Field(
+        ..., # '...' は必須フィールドを示す
+        example=create_example_evals() # ★ ヘルパー関数で生成したサンプルを指定 ★
     )
 
-# (もし api/main.py に直接書いているなら、app に router を含める)
-# from fastapi import FastAPI
-# app = FastAPI()
-# app.include_router(router, prefix="/api/v1") # 例
+    # バリデーターは変更なし
+    @validator('user_evals')
+    def check_dict_size(cls, v):
+        expected_size = config.NUM_STUDENTS - 1
+        if len(v) != expected_size:
+            raise ValueError(f'辞書の要素数は {expected_size} 個である必要があります')
+        return v
 
-# === 4. レスポンス用のPydanticモデル定義 (★新規追加) ===
+router = APIRouter()
 
-class OptimizedLayoutResponse(BaseModel):
-    final_layout: list[list[int]] # 最終的な座席表 (6x5)
-    initial_score: float        # 初期スコア
-    final_score: float          # 最終スコア
-    steps_taken: int            # AIが実行した交換回数
-    temperature_used: float
-    model_config = {
-        "example": {
-            "final_layout": [
-                [ 10, 2, 5, 29, 14],
-                [ 21, 13, 7, 8, 9],
-                # ... (以下略) ...
-                [ 25, 1, 27, 28, 4]
-            ],
-            "initial_score": 12.0,
-            "final_score": 58.0,
-            "steps_taken": 100,
-            "temperature_used": 0.1
+# ... (古いテストエンドポイント) ...
+
+# ★ 2. エンドポイントの修正 ★
+@router.post("/recommend")
+async def recommend_seat_change(input_data: UserEvaluationInput): # 引数を新しいモデルに
+    """
+    ユーザー評価(名前:スコアの辞書)を受け取り、
+    AIで20回席替えをシミュレートした後の最終配置とスコアを返す。
+
+    最終レスポンス:
+    - final_layout_names: (5x6) の名前入り座席表
+    - final_score: 席替え後のスコア
+    """
+    if evaluate is None:
+        return {"status": "error", "message": "サーバーエラー: evaluateモジュールがロードされていません。"}
+
+    try:
+        # initial_seating の処理は不要になったので削除
+
+        # 新しい関数名を呼び出し、辞書を渡す
+        result = evaluate.get_optimized_layout(
+            user_evaluations_dict=input_data.user_evals # リストではなく辞書を渡す
+            # initial_seating_array は渡さない
+        )
+
+        return result
+
+    except Exception as e:
+        # ... (エラーハンドリングは同じ) ...
+        return {
+            "status": "error",
+            "message": "評価の実行中に予期せぬエラーが発生しました。",
+            # ...
         }
-    }
-
-
-# === 5. AIおまかせ席替えエンドポイント (★これが新しいAPI) ===
-
-@router.get("/get_optimized_layout", response_model=OptimizedLayoutResponse)
-async def get_optimized_layout(
-    steps: int = Query(100, ge=1, le=500, description="AIが最適化のために試行する交換回数（ステップ数）"),
-    temperature: float = Query(0.1, ge=0.01, description="AIの行動の堅実さ（温度）。0.1が最も堅実（活用）。"),
-    agent: Agent = Depends(get_agent),
-    env: Env = Depends(get_env)
-):
-    """
-    AIによる席替えの最適化を実行し、
-    「最終的な座席表」を返します。
-    
-    (入力は不要です)
-    """
-    
-    # 1. ランダムな初期座席表を生成 (2D)
-    state_2d = env.reset()
-    initial_score = env.calculate_score(state_2d)
-
-    # 2. AIによる最適化ループを実行
-    for _ in range(steps):
-        
-        # 3. AIに渡すために1Dに変換
-        state_1d = state_2d.flatten()
-        
-        # 4. AIに行動を決定させる (予測モード)
-        #    指定された低温(堅実モード)で実行
-        action_index = agent.act(state_1d, temperature=temperature)
-        action_pair = agent.action_pairs[action_index]
-        
-        # 5. 環境を1ステップ進める (env.step は 2D配列を要求)
-        next_state_2d, reward, done = env.step(state_2d, action_pair)
-        
-        # 6. 座席表を更新
-        state_2d = next_state_2d
-
-    # 7. ループ完了後、最終スコアを計算
-    final_score = env.calculate_score(state_2d)
-    
-    # 8. 最終結果をJSONで返す
-    return OptimizedLayoutResponse(
-        final_layout=state_2d.tolist(), # NumPy配列(2D)をリスト(2D)に変換
-        initial_score=initial_score,
-        final_score=final_score,
-        steps_taken=steps,
-        temperature_used=temperature
-    )

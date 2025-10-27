@@ -3,30 +3,27 @@ import pandas as pd  # 1. pandas をインポート
 
 class Env:
 
-    def __init__(self):
-        """'relationships.csv' を読み込んで環境を初期化する"""
+    # <--- 修正点: __init__ が 'relations_matrix' を引数として受け取るように変更
+    def __init__(self, relations_matrix: np.ndarray):
+        """
+        外部から渡された関係性マトリクスを使って環境を初期化する
+        """
 
-        try:
-            df = pd.read_csv('data/relationships.csv', header=0, index_col=0)
+        # <--- 修正点: CSV読み込みロジック (try...except...) をすべて削除
 
-            # DataFrame を NumPy 配列 (.values) に変換して格納
-            self.relations = df.values
+        # 渡されたNumpy配列をそのままインスタンス変数に設定
+        self.relations = relations_matrix 
 
-        except FileNotFoundError:
-            print("="*50)
-            print("エラー: 'relationships.csv' が見つかりません。")
-            print("env.py と同じ階層に配置してください。")
-            print("="*50)
-            # 実行を停止
-            raise
-
-        self.rows = 6
-        self.cols = 5
+        self.rows = 5
+        self.cols = 6
         self.num_students = self.rows * self.cols # 30人
 
-        # 5. マトリクスの形状チェック
+        # マトリクスの形状チェック (これは残します)
         if self.relations.shape != (self.num_students, self.num_students):
-            raise ValueError(f"関係性マトリクスの形状が({self.num_students}, {self.num_students})ではありません。Shape: {self.relations.shape}")
+            raise ValueError(
+                f"関係性マトリクスの形状が({self.num_students}, {self.num_students})ではありません。"
+                f"受け取ったShape: {self.relations.shape}"
+            )
 
     def reset(self):
         """席配列を初期化する"""
