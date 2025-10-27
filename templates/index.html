@@ -1,11 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>朝の会</title>
 </head>
 <body>
+    <h1>朝の会</h1>
+
+    <form method="POST">
+        <label for="due">課題締切日:</label>
+        <select id="due" name="due_date">
+            <option value="">日付を選択してください</option>
+            <option value="2025/10/13">2025/10/13</option>
+            <option value="2025/10/14">2025/10/14</option>
+            <option value="2025/10/15">2025/10/15</option>
+            <option value="2025/10/16">2025/10/16</option>
+            <option value="2025/10/17">2025/10/17</option>
+        </select>
+        <br><br>
+
+        <label for="day">曜日:</label>
+        <select id="day" name="weekday">
+            <option value="">曜日を選択してください</option>
+            <option value="月">月曜日</option>
+            <option value="火">火曜日</option>
+            <option value="水">水曜日</option>
+            <option value="木">木曜日</option>
+            <option value="金">金曜日</option>
+        </select>
+        <br><br>
+        
+        <button type="submit">検索</button>
+    </form>
+
+    <hr> <h2>課題リスト</h2>
     
+    {% if assignments_list %}
+        <ul>
+            {% for assignment in assignments_list %}
+                <li>
+                    <strong>科目: {{ assignment[1] }}</strong>
+                            <br>
+                            <strong>課題名: {{ assignment[2] }}</strong>
+                            <br>
+                            詳細: {{ assignment[3] }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>該当する課題はありません。</p>
+    {% endif %}
+
+
+    <h2>時間割</h2>
+    {% if timetable_list %}
+        <ul>
+            {% for subject in timetable_list %}
+                <li>{{ subject }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>該当する時間割はありません。</p>
+    {% endif %}
+
 </body>
 </html>
