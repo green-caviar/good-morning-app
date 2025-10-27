@@ -37,30 +37,66 @@ class Env:
         return initial_state_2d
 
     def calculate_score(self, state):
-        """席配置のスコアを計算する"""
-
         total_score = 0
-
+        
+        # --- 定義された重み ---
+        WEIGHT_ADJACENT = 1.0   # 前後左右（通路なし）の重み
+        WEIGHT_AISLE = 0.5      # 通路を挟む左右の重み
+        WEIGHT_DIAGONAL = 0.5   # 斜めの重み (ご要望通り)
+        
+        # 8方向の「移動先（オフセット）」を定義
         directions = [
-            (-1, 0), (1, 0), (0, -1), (0, 1), # 前後左右
+            (-1, 0), (1, 0), (0, -1), (0, 1),  # 前後左右
             (-1, 1), (-1, -1), (1, 1), (1, -1) # 斜め4方向
         ]
-        for r in range(self.rows):
-            for c in range(self.cols):
-
-                student1_id = state[r][c]
-
+        
+        # 全ての席を2重ループでチェック
+        for r in range(self.rows): 
+            for c in range(self.cols): 
+                
+                student1_id = state[r][c] 
+                
                 for dr, dc in directions:
-                    nr, nc = r + dr, c + dc
-
+                    nr, nc = r + dr, c + dc # nr = new_row, nc = new_col
+                    
+                    # 境界条件チェック
                     if (0 <= nr < self.rows) and (0 <= nc < self.cols):
                         student2_id = state[nr][nc]
+                        
+                        # 1. 生徒間の関係性スコア (A->B + B->A)
+                        score_raw = (self.relations[student1_id][student2_id] +
+                                     self.relations[student2_id][student1_id])
 
-                        score = (self.relations[student1_id][student2_id] +
-                                self.relations[student2_id][student1_id])
+                        # --- 2. 重み付けロジックの開始 ---
+                        weight = WEIGHT_ADJACENT # 前後 (dr!=0, dc=0) や デフォルトは 1.0
 
-                        total_score += score
+                        if dc != 0 and dr == 0:
+                            # ① 左右の席の場合 (真横)
+                            
+                            is_across_aisle = False
+                            
+                            # 通路 1: c=1 と c=2 の間 (c=1の右隣 または c=2の左隣)
+                            if (c == 1 and dc == 1) or (c == 2 and dc == -1):
+                                is_across_aisle = True
+                            
+                            # 通路 2: c=3 と c=4 の間 (c=3の右隣 または c=4の左隣)
+                            elif (c == 3 and dc == 1) or (c == 4 and dc == -1):
+                                is_across_aisle = True
 
+                            if is_across_aisle:
+                                weight = WEIGHT_AISLE  # 0.5 (通路を挟む)
+                            else:
+                                # 通路を挟まない隣 (例: c=0とc=1の間、c=2とc=3の間)
+                                weight = WEIGHT_ADJACENT # 1.0 
+                                
+                        elif dc != 0 and dr != 0:
+                            # ② 斜めの席の場合
+                            weight = WEIGHT_DIAGONAL # 0.5
+                        
+                        # 3. 重みを適用してスコアを加算
+                        total_score += score_raw * weight
+        
+        # (A,B)のスコアと(B,A)のスコアを2回足しているため、2で割る
         return total_score / 2
 
     def step(self, state, action_pair):

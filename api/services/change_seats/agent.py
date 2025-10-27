@@ -10,20 +10,33 @@ from api.services.change_seats.replay_memory import ReplayMemory
 
 class Agent:
 
-    def __init__(self, state_size, action_size, memory_capacity, learning_rate=1e-3, gamma=0.99):
+    def __init__(self, seating_size, relations_size, action_size, memory_capacity, learning_rate=1e-3, gamma=0.99):
+        """
+        解説:
+        引数を大幅に変更しました。
+        - state_size (30) -> seating_size (30) に名前変更
+        - relations_size (900) を新たに追加
+        """
 
-        self.num_students = state_size # 30
-        actual_input_size = self.num_students # 30
-
+        self.seating_size = seating_size   # 30 (座席表のサイズ)
+        self.relations_size = relations_size # 900 (関係性マトリクスのサイズ)
+        
+        # 1. 脳(QNetwork)への総入力サイズを計算
+        self.actual_input_size = self.seating_size + self.relations_size # 30 + 900 = 930
+        
         self.action_size = action_size # 435
 
         self.gamma = gamma
 
-        # 生徒ID(0-29)から2つを選ぶ組み合わせリスト
+        # 2. action_pairs の生成 (生徒ID 0-29 が必要)
+        # seating_size (30) が生徒数(NUM_STUDENTS)と等しいため、これを使用します。
+        self.num_students = self.seating_size 
         self.action_pairs = list(itertools.combinations(range(self.num_students), 2))
 
-        # Agentの脳を作成
-        self.model = QNetwork(state_size=actual_input_size, action_size=self.action_size)
+        # 3. Agentの脳を作成
+        # QNetwork に渡す state_size を、計算した 930 に変更します。
+        self.model = QNetwork(state_size=self.actual_input_size, 
+                              action_size=self.action_size)
 
         # 学習エンジンの設定
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
