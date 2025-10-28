@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>AI席替え（カスタム）</title>
+    <style>
+        /* === 1. 基本設定 === */
+        :root {
+            --primary-color: #007bff;
+            --light-gray: #f4f7f6;
+            --border-color: #ddd;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--light-gray);
+            color: #333;
+            line-height: 1.6;
+        }
+
+        /* === 2. 全体のコンテナ === */
+        .main-container {
+            max-width: 1000px; /* サイトの最大幅 */
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            padding: 20px 30px;
+        }
+
+        h1, h2 {
+            color: #222;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 8px;
+        }
+        
+        h1 {
+            font-size: 2em;
+            margin-top: 0;
+        }
+        
+        h2 {
+            font-size: 1.5em;
+            margin-top: 30px;
+        }
+
+        .nav-link {
+            display: inline-block;
+            margin-top: 10px;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+        }
+
+        /* === 3. メインの2カラムレイアウト === */
+        .container {
+            display: flex;
+            /* flex-wrap: wrap; (縦積みを許可しない) */
+            gap: 40px;
+        }
+        .form-area {
+            width: 300px;
+            flex-shrink: 0; /* 縮まない */
+        }
+        .result-area {
+            flex-grow: 1; /* 残りの幅を全部取る */
+            min-width: 300px; /* 最小幅 */
+        }
+        
+        /* === 4. 好感度入力フォーム === */
+        .form-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            padding: 10px;
+            background: #fafafa;
+            border-radius: 8px;
+        }
+        .form-grid div {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .form-grid label {
+            margin-bottom: 4px;
+            font-size: 0.95em;
+            font-weight: 500;
+        }
+        .form-grid select { 
+            width: 100%; 
+            padding: 5px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        
+        button[type="submit"] {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 20px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+
+        /* === 5. 結果表示エリア === */
+        .seat-table {
+            border-collapse: collapse;
+            margin-top: 20px;
+            width: 100%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            table-layout: fixed; 
+        }
+        .seat-table th, .seat-table td {
+            border: 1px solid var(--border-color);
+            height: 50px;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 1em;
+            padding: 5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap; /* ★ 他のセルは省略を維持 */
+        }
+        .seat-table td strong {
+            color: var(--primary-color);
+            font-size: 1.1em;
+            
+            /* ▼▼▼ CSSを修正 ▼▼▼ */
+            white-space: normal; /* ★ あなたのセルだけ改行を許可 */
+            line-height: 1.2;    /* ★ 2行になった時の行間を詰める */
+            /* ▲▲▲ 修正ここまで ▲▲▲ */
+        }
+        
+        .result-score {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #005a9c;
+            background: #e6f7ff;
+            border: 1px solid #b3e0ff;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .error { 
+            color: #D8000C;
+            background-color: #FFD2D2;
+            border: 1px solid #D8000C;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold; 
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+
+        <h1>AI席替え（カスタム）</h1>
+        <p>あなた（{{ user_name }}）から見た、クラスメイトへの好感度を入力してください。<br>（-1: 嫌い, 0: 普通, 1: 好き）</p>
+        <a href="/" class="nav-link">＜ 課題・時間割検索ページに戻る</a>
+        
+        <hr>
+
+        {% if error_message %}
+            <p class="error">{{ error_message }}</p>
+        {% endif %}
+
+        <div class="container">
+            
+            <div class="form-area">
+                <h2>好感度入力</h2>
+                
+                {% if student_names %}
+                <form method="POST" action="/seating">
+                    <div class="form-grid">
+                        
+                        {% for name in student_names %}
+                        <div>
+                            <label for="student_{{name}}">{{name}}:</label>
+                            <select id="student_{{name}}" name="{{name}}">
+                                <option value="1">好き (1)</option>
+                                <option value="0" selected>普通 (0)</option>
+                                <option value="-1">嫌い (-1)</option>
+                            </select>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <input type="hidden" name="student_names_json" value='{{ student_names | tojson }}'>
+                    <input type="hidden" name="user_name" value='{{ user_name }}'>
+                    
+                    <button type="submit">AIに最適化させる</button>
+                </form>
+                {% else %}
+                    <p class="error">生徒名簿を読み込めなかったため、フォームを表示できません。</p>
+                {% endif %}
+            </div>
+
+            <div class="result-area">
+                <h2>最適化された座席表</h2>
+
+                {% if layout %}
+                    <p>計算が完了しました。（教卓側が上です）</p>
+                    
+                    {% if final_score is not none %}
+                        <p class="result-score">
+                            📈 最終スコア: {{ final_score | round(2) }}
+                        </p>
+                    {% endif %}
+
+                    <table class="seat-table">
+                        {% for row in layout %}
+                        <tr>
+                            {% for name in row %}
+                            <td>
+                                {% if name == user_name %}
+                                    <strong>{{ name }}<br>(あなた)</strong>
+                                {% else %}
+                                    {{ name }}
+                                {% endif %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <p>フォームを入力して「最適化」ボタンを押してください。</p>
+                {% endif %}
+            </div>
+
+        </div> 
+    
+    </div> 
+</body>
+</html>
