@@ -53,21 +53,28 @@
             margin: 25px 0;
         }
 
-        /* === 3. ★★★ 2カラムレイアウト (ここを追加) ★★★ === */
+        /* === 3. 2カラムレイアウト === */
         .container {
             display: flex;
-            flex-wrap: wrap; /* 狭い画面では縦積みになる */
+            /* flex-wrap: wrap; */ /* 狭い画面では縦積み <- ★この行をコメントアウト(または削除) */
             gap: 40px;
         }
         .form-area {
             width: 300px;
             flex-shrink: 0;
         }
+        
         .result-area {
             flex-grow: 1;
             min-width: 300px;
+            
+            /* スクロールバー（行数が多すぎる場合） */
+            max-height: 500px; 
+            overflow-y: auto; 
+            
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) var(--light-gray);
         }
-        /* ★★★ 追加ここまで ★★★ */
 
 
         /* === 4. フォームのスタイル === */
@@ -110,10 +117,11 @@
             background-color: #0056b3;
         }
 
-        /* === 5. 結果表示エリアのスタイル === */
+        /* === 5. 結果表示エリアのスタイル (★ここを修正) === */
         .result-list {
             list-style-type: none; /* 点を消す */
             padding-left: 0;
+            margin-top: 0; /* h2との隙間調整 */
         }
         .result-list li {
             background: #fafafa;
@@ -121,6 +129,12 @@
             border-radius: 8px;
             padding: 12px 15px;
             margin-bottom: 10px;
+            
+            /* ▼▼▼ これを追加 ▼▼▼ */
+            /* 長い文章をセルの幅で折り返す */
+            word-wrap: break-word;
+            word-break: break-word;
+            /* ▲▲▲ 追加ここまで ▲▲▲ */
         }
         .result-list li strong {
             color: #333;
@@ -149,6 +163,7 @@
 
         <div class="container">
 
+            <!-- 1. 左側: フォーム -->
             <div class="form-area">
                 <h2>検索</h2>
                 <form method="POST" class="checker-form">
@@ -181,7 +196,9 @@
             </div>
 
 
+            <!-- 2. 右側: 結果 -->
             <div class="result-area">
+                <!-- 2a. 課題リスト -->
                 <h2>課題リスト</h2>
                 {% if assignments_list %}
                     <ul class="result-list">
@@ -199,6 +216,7 @@
                     <p>該当する課題はありません。</p>
                 {% endif %}
 
+                <!-- 2b. 時間割 -->
                 <h2>時間割</h2>
                 {% if timetable_list %}
                     <ul class="result-list">
@@ -211,7 +229,11 @@
                 {% endif %}
             </div>
 
-        </div> <hr> 
+        </div> <!-- .container 閉じタグ -->
+
+        
+        <!-- 3. AI席替えセクション -->
+        <hr> 
         <h2>AI席替え（カスタム）</h2>
         <p>
             あなた専用のAI席替えシミュレーターです。<br>
@@ -223,5 +245,6 @@
             </a>
         </p>
     
-    </div> </body>
+    </div> <!-- .main-container 閉じタグ -->
+</body>
 </html>
