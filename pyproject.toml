@@ -13,7 +13,9 @@ dependencies = [
     "pandas",
     "numpy",
     "torch",
-    "python-multipart (>=0.0.20,<0.0.21)"
+    "python-multipart (>=0.0.20,<0.0.21)",
+    "httpx",
+    "jinja2"
 ]
 
 

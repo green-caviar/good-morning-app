@@ -3,9 +3,14 @@ services:
     build: .
     volumes:
       #- .dockervenv:/src/.venv
-      - .:/src
-      - /src/.venv
+      # 1. ローカルのコードをマウントする (ホットリロードのため)
+      - .:/src 
+      # 2. ただし、.venv だけはコンテナ内のものを使い続ける (名前付きボリューム)
+      - venv_data:/src/.venv
     ports:
       - 8000:8000
     environment:
      - WATCHFILES_FORCE_POLLING=true
+
+volumes:
+  venv_data: {} # これで venv_data が定義されます
